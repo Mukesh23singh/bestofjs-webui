@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "op": "remove-project-tags",
+      "project": "redux",
+      "tags": ["react"]
+    }
+  ]
+}

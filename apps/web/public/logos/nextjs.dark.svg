@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" preserveAspectRatio="xMidYMid" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient x1="55.63%" y1="56.39%" x2="83.23%" y2="96.08%" id="c">
+      <stop stop-color="#FFF" offset="0%"/>
+      <stop stop-color="#FFF" stop-opacity="0" offset="100%"/>
+    </linearGradient>
+    <linearGradient x1="50%" y1="0%" x2="49.95%" y2="73.44%" id="d">
+      <stop stop-color="#FFF" offset="0%"/>
+      <stop stop-color="#FFF" stop-opacity="0" offset="100%"/>
+    </linearGradient>
+    <circle id="a" cx="128" cy="128" r="120" fill="#ff0"/>
+  </defs>
+  <circle cx="128" cy="128" r="128" fill="#fff"/>
+  <mask id="b" fill="#fff">
+    <use xlink:href="#a"/>
+  </mask>
+  <g mask="url(#b)">
+    <circle cx="128" cy="128" r="128"/>
+    <path d="M212.63 224.03 98.33 76.8H76.8v102.36h17.23V98.68L199.1 234.45c4.74-3.18 9.26-6.66 13.52-10.42Z" fill="url(#c)"/>
+    <path fill="url(#d)" d="M163.56 76.8h17.07v102.4h-17.07z"/>
+  </g>
+</svg>

@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "op": "update-tag",
+      "code": "nextjs",
+      "set": { "parentCode": "react" }
+    }
+  ]
+}

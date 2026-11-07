@@ -1,0 +1,298 @@
+import {
+  and,
+  asc,
+  countDistinct,
+  eq,
+  inArray,
+  lte,
+  notInArray,
+  sql,
+} from "drizzle-orm";
+
+import { db } from "../../index";
+import * as schema from "../../schema";
+import { selectProjectIdsHavingAnyTag } from "../projects/find";
+
+/**
+ * Drop the excluded tags themselves from a tag listing, and stop projects
+ * carrying them from counting towards the tags they share with other projects.
+ *
+ * Both halves are needed: without the first, a deployment excluding `ai` still
+ * offers an `ai` chip leading to an empty page; without the second, a tag like
+ * `react` advertises a count the listing then fails to deliver.
+ */
+function getExcludedTagsFilters(excludedTagCodes: string[] | undefined) {
+  if (!excludedTagCodes || excludedTagCodes.length === 0) {
+    return { tagFilter: undefined, projectFilter: undefined };
+  }
+  return {
+    tagFilter: notInArray(schema.tags.code, excludedTagCodes),
+    projectFilter: notInArray(
+      schema.projectsToTags.projectId,
+      selectProjectIdsHavingAnyTag(db, excludedTagCodes),
+    ),
+  };
+}
+
+export interface ExcludedTagsOption {
+  /**
+   * Hide these tags, and every project carrying them, from the result. Set per
+   * deployment by the web app — see `apps/web/src/config/apps.ts`.
+   */
+  excludedTagCodes?: string[];
+}
+
+export async function findTags(options?: ExcludedTagsOption) {
+  const { tagFilter, projectFilter } = getExcludedTagsFilters(
+    options?.excludedTagCodes,
+  );
+
+  const tags = await db
+    .select({
+      name: schema.tags.name,
+      id: schema.tags.id,
+      code: schema.tags.code,
+      facet: schema.tags.facet,
+      parentTagId: schema.tags.parentTagId,
+      createdAt: schema.tags.createdAt,
+      description: schema.tags.description,
+      count: countDistinct(schema.projectsToTags.projectId),
+    })
+    .from(schema.tags)
+    .leftJoin(
+      schema.tagClosure,
+      eq(schema.tagClosure.ancestorId, schema.tags.id),
+    )
+    .leftJoin(
+      schema.projectsToTags,
+      // ANDed into the JOIN, not the WHERE: a tag whose every project is
+      // excluded must still appear with a count of 0 rather than vanish
+      // (`count()` on the LEFT-joined column yields 0, which is the truth).
+      and(
+        eq(schema.projectsToTags.tagId, schema.tagClosure.descendantId),
+        projectFilter,
+      ),
+    )
+    .where(tagFilter)
+    .groupBy(() => [
+      schema.tags.id,
+      schema.tags.name,
+      schema.tags.code,
+      schema.tags.facet,
+      schema.tags.parentTagId,
+      schema.tags.createdAt,
+      schema.tags.description,
+    ])
+    .orderBy(asc(schema.tags.name));
+  return tags;
+}
+
+export type TagWithProjectsItem = Awaited<
+  ReturnType<typeof findTags>
+>[number] & {
+  projects: TagProject[];
+};
+
+export type TagProject = {
+  slug: string;
+  name: string;
+  logo: string | null;
+  owner_id: number;
+};
+
+/**
+ * Fetch all tags with counts and their top projects per tag (by stars). N is configurable via options (default 5).
+ * Single query using subqueries: tags with count, ranked projects (ROW_NUMBER), top N per tag, then group in JS.
+ */
+export async function findTagsWithProjects(
+  options?: ExcludedTagsOption & {
+    /** Restrict to these tag codes. Omit for every tag (the /tags page). */
+    codes?: string[];
+    /** Max number of top (by stars) projects to return per tag. Default 5. */
+    topProjectsPerTag?: number;
+  },
+): Promise<TagWithProjectsItem[]> {
+  const { codes, excludedTagCodes, topProjectsPerTag = 5 } = options ?? {};
+  const codeFilter =
+    codes && codes.length > 0 ? inArray(schema.tags.code, codes) : undefined;
+  const { tagFilter, projectFilter } = getExcludedTagsFilters(excludedTagCodes);
+
+  // Sub-query 1: Tags with project count (same logic as findTags()). Used in main query FROM.
+  const tagsWithCount = db
+    .select({
+      name: schema.tags.name,
+      id: schema.tags.id,
+      code: schema.tags.code,
+      facet: schema.tags.facet,
+      parentTagId: schema.tags.parentTagId,
+      createdAt: schema.tags.createdAt,
+      description: schema.tags.description,
+      count: countDistinct(schema.projectsToTags.projectId).as("count"),
+    })
+    .from(schema.tags)
+    .leftJoin(
+      schema.tagClosure,
+      eq(schema.tagClosure.ancestorId, schema.tags.id),
+    )
+    .leftJoin(
+      schema.projectsToTags,
+      and(
+        eq(schema.projectsToTags.tagId, schema.tagClosure.descendantId),
+        projectFilter,
+      ),
+    )
+    .where(and(codeFilter, tagFilter))
+    .groupBy(() => [
+      schema.tags.id,
+      schema.tags.name,
+      schema.tags.code,
+      schema.tags.facet,
+      schema.tags.parentTagId,
+      schema.tags.createdAt,
+      schema.tags.description,
+    ])
+    .as("tags_with_count");
+
+  // Sub-query 2: All tag–project rows with ROW_NUMBER() per tag by stars; excludes deprecated. Used only inside sub-query 3.
+  const tagProjects = db
+    .select({
+      tagId: schema.tags.id,
+      tagCode: schema.tags.code,
+      slug: schema.projects.slug,
+      name: schema.projects.name,
+      logo: schema.projects.logo,
+      owner_id: schema.repos.owner_id,
+      stars: schema.repos.stars,
+    })
+    .from(schema.tags)
+    .innerJoin(
+      schema.tagClosure,
+      eq(schema.tagClosure.ancestorId, schema.tags.id),
+    )
+    .innerJoin(
+      schema.projectsToTags,
+      eq(schema.projectsToTags.tagId, schema.tagClosure.descendantId),
+    )
+    .innerJoin(
+      schema.projects,
+      eq(schema.projects.id, schema.projectsToTags.projectId),
+    )
+    .innerJoin(schema.repos, eq(schema.repos.id, schema.projects.repoId))
+    .where(
+      and(
+        notInArray(schema.projects.status, ["deprecated"]),
+        codeFilter,
+        tagFilter,
+        projectFilter,
+      ),
+    )
+    .groupBy(
+      schema.tags.id,
+      schema.tags.code,
+      schema.projects.id,
+      schema.projects.slug,
+      schema.projects.name,
+      schema.projects.logo,
+      schema.repos.owner_id,
+      schema.repos.stars,
+    )
+    .as("tag_projects");
+
+  const ranked = db
+    .select({
+      tagCode: tagProjects.tagCode,
+      slug: tagProjects.slug,
+      name: tagProjects.name,
+      logo: tagProjects.logo,
+      owner_id: tagProjects.owner_id,
+      rn: sql<number>`ROW_NUMBER() OVER (PARTITION BY ${tagProjects.tagId} ORDER BY ${tagProjects.stars} DESC NULLS LAST, ${tagProjects.slug} ASC)`.as(
+        "rn",
+      ),
+    })
+    .from(tagProjects)
+    .as("ranked");
+
+  // Sub-query 3: From sub-query 2, keep only rows with rn <= topProjectsPerTag (top N projects per tag). Used in main query LEFT JOIN.
+  const topProjects = db
+    .select({
+      tagCode: ranked.tagCode,
+      slug: ranked.slug,
+      name: ranked.name,
+      logo: ranked.logo,
+      owner_id: ranked.owner_id,
+      rn: ranked.rn,
+    })
+    .from(ranked)
+    .where(lte(ranked.rn, topProjectsPerTag))
+    .as("top_projects");
+
+  // Main query (single round-trip): Select from sub-query 1 left-joined to sub-query 3; this is the only await, so one DB round-trip.
+  const flatRows = await db
+    .select({
+      name: tagsWithCount.name,
+      id: tagsWithCount.id,
+      code: tagsWithCount.code,
+      facet: tagsWithCount.facet,
+      parentTagId: tagsWithCount.parentTagId,
+      createdAt: tagsWithCount.createdAt,
+      description: tagsWithCount.description,
+      count: tagsWithCount.count,
+      slug: topProjects.slug,
+      projectName: topProjects.name,
+      logo: topProjects.logo,
+      owner_id: topProjects.owner_id,
+      rn: topProjects.rn,
+    })
+    .from(tagsWithCount)
+    .leftJoin(topProjects, eq(tagsWithCount.code, topProjects.tagCode))
+    .orderBy(asc(tagsWithCount.name), asc(topProjects.rn));
+
+  // Group flat rows by tag code into TagWithProjectsItem[]
+  const byCode = Map.groupBy(flatRows, (row) => row.code);
+  return Array.from(byCode.values(), (rows) => {
+    const first = rows[0];
+    const projects: TagProject[] = rows
+      .filter(
+        (
+          row,
+        ): row is typeof row & {
+          slug: string;
+          projectName: string;
+          owner_id: number;
+        } =>
+          row.slug != null && row.projectName != null && row.owner_id != null,
+      )
+      .map((row) => ({
+        slug: row.slug,
+        name: row.projectName,
+        logo: row.logo,
+        owner_id: row.owner_id,
+      }));
+    return {
+      name: first.name,
+      id: first.id,
+      code: first.code,
+      facet: first.facet,
+      parentTagId: first.parentTagId,
+      createdAt: first.createdAt,
+      description: first.description,
+      count: first.count,
+      projects,
+    };
+  });
+}
+
+/**
+ * One tag with its top projects, for the tag hover card. A thin wrapper rather
+ * than its own query so "top 5 by stars, deprecated excluded" has a single
+ * implementation and the hover card cannot drift from the /tags page.
+ *
+ * Returns `null` for an unknown code.
+ */
+export async function findTagWithProjects(
+  code: string,
+  options?: ExcludedTagsOption & { topProjectsPerTag?: number },
+): Promise<TagWithProjectsItem | null> {
+  const [tag] = await findTagsWithProjects({ ...options, codes: [code] });
+  return tag ?? null;
+}

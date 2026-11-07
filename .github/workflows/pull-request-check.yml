@@ -1,0 +1,78 @@
+name: PR check
+
+on:
+  # Every pull request, whatever its base branch — a base filter would skip
+  # stacked PRs, whose base is the branch below them rather than `develop`.
+  pull_request:
+
+jobs:
+  check_before_merge:
+    name: Test and lint checks
+    runs-on: ubuntu-latest
+    env:
+      TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+      TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Environment
+        uses: ./.github/tooling/github-actions/install
+
+      - name: Install Dependencies
+        shell: bash
+        run: pnpm install
+
+      - name: Type checking with Turbo
+        run: pnpm run typecheck
+
+      - name: Code Linting with Turbo
+        run: pnpm run lint
+
+      - name: Unit tests
+        run: pnpm -F web test:ci
+
+  automated-testing:
+    name: E2E Tests
+    # only run when PR are merged into develop
+    if: github.ref == 'refs/heads/develop'
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+    steps:
+      - name: Code Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Environment
+        uses: ./.github/tooling/github-actions/install
+
+      - name: Install Dependencies
+        shell: bash
+        run: pnpm -F web... install
+
+      - name: Build
+        shell: bash
+        run: pnpm -F web build
+
+      - name: Install Playwright Browsers
+        run: pnpm -F web exec playwright install chromium --with-deps
+
+      - name: Start app and run tests
+        env:
+          BASE_URL: http://localhost:3000
+        run: |
+          pnpm -F web start &
+          echo "Waiting for app to be ready..."
+          while ! curl -s http://localhost:3000 > /dev/null; do
+            sleep 1
+          done
+          echo "App is ready. Running tests..."
+          pnpm  -F web test:e2e
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: report
+          path: apps/web/playwright-report/

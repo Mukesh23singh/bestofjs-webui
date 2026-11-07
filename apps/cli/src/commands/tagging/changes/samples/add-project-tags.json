@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "op": "add-project-tags",
+      "project": "redux",
+      "tags": ["react", "state"]
+    }
+  ]
+}

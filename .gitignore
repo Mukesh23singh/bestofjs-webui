@@ -1,25 +1,18 @@
-# Override values from .env files (used to run the API in local)
-.env.local
-
-# Build
-build
-
-# Logs
-logs
-*.log
-
-# Coverage directory used by tools like istanbul
-coverage
-
-# Dependency directory
 node_modules
-
-# Users Environment Variables
-.lock-wscript
 .DS_Store
+.env
+.env.development
+.env.production
 
-# Webpack monitor files
-monitor/
+# local PostgreSQL database
+db-data
+db-backup
 
-# Private notes
-memo/
+# Output of typecheck command
+tsconfig.tsbuildinfo
+
+# node-fetch-cache requests cache
+.cache
+
+# Turbo https://turbo.build/docs/getting-started/add-to-existing-repository#edit-gitignore
+.turbo

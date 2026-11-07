@@ -1,0 +1,83 @@
+import { schema } from "@repo/core";
+import { and, desc, eq, type SQL } from "@repo/core/drizzle";
+import {
+  type ProjectDetails,
+  ProjectService,
+} from "@repo/core/services/projects";
+import { findEffectiveTagsByProjectIds } from "@repo/core/services/tags";
+
+import type { TaskLoopOptions, TaskRunnerContext } from "@/task-types";
+
+import { ItemProcessor } from "./abstract-item-processor";
+
+export class ProjectProcessor extends ItemProcessor<ProjectDetails> {
+  type = "project";
+  service: ProjectService;
+  effectiveTagsByProjectId: Awaited<
+    ReturnType<typeof findEffectiveTagsByProjectIds>
+  > = new Map();
+
+  constructor(context: TaskRunnerContext, loopOptions: TaskLoopOptions) {
+    super(context, loopOptions);
+    this.service = new ProjectService(context.db);
+  }
+
+  toString(item: ProjectDetails) {
+    return item.slug;
+  }
+
+  async getAllItemsIds(where?: SQL) {
+    const { db, logger } = this.context;
+    const { limit, skip, fullName, slug } = this.loopOptions;
+    const { projects, repos } = schema;
+
+    const query = db
+      .select({ id: projects.id })
+      .from(projects)
+      .orderBy(desc(projects.createdAt))
+      .offset(skip)
+      .leftJoin(repos, eq(projects.repoId, repos.id));
+
+    if (limit) {
+      query.limit(limit);
+    }
+
+    const whereClauses = [];
+
+    if (slug) {
+      whereClauses.push(eq(projects.slug, slug));
+    }
+
+    if (fullName) {
+      const [owner, name] = fullName.split("/");
+      whereClauses.push(eq(repos.owner, owner), eq(repos.name, name));
+    }
+
+    if (where) {
+      whereClauses.push(where);
+    }
+
+    if (whereClauses.length > 0) {
+      query.where(and(...whereClauses));
+    }
+
+    const foundProjects = await query;
+    if (!foundProjects.length) logger.error("No projects found");
+
+    const ids = foundProjects.map((repo) => repo.id);
+    this.effectiveTagsByProjectId = await findEffectiveTagsByProjectIds(
+      db,
+      ids,
+    );
+    return ids;
+  }
+
+  async getItemById(id: string) {
+    const project = await this.service.getProjectWithDirectTagsById(id);
+    if (!project) throw new Error(`Project not found by id: ${id}`);
+    return {
+      ...project,
+      tags: this.effectiveTagsByProjectId.get(id) ?? [],
+    };
+  }
+}

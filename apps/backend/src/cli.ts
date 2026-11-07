@@ -1,0 +1,115 @@
+/** biome-ignore-all lint/suspicious/noExplicitAny: TODO type correctly */
+import { cli, command } from "cleye";
+
+import { cliFlags as sharedFlags } from "./flags";
+import { createTaskRunner } from "./task-runner";
+import type { Task } from "./task-types";
+import { buildMonthlyRankingsTask } from "./tasks/build-monthly-rankings.task";
+import { buildStaticApiTask } from "./tasks/build-static-api.task";
+import { checkTrendsQueriesTask } from "./tasks/check-trends-queries.task";
+import { cleanupRepoTrendsTask } from "./tasks/cleanup-repo-trends.task";
+import {
+  helloWorldHallOfFameTask,
+  helloWorldProjectsTask,
+  helloWorldReposTask,
+} from "./tasks/hello-world.task";
+import { invalidateTrendsCacheTask } from "./tasks/invalidate-trends-cache.task";
+import { notifyDailyTask } from "./tasks/notify-daily.task";
+import { notifyMonthlyTask } from "./tasks/notify-monthly.task";
+import { rebuildTagClosureTask } from "./tasks/rebuild-tag-closure.task";
+import { buildRisingStarsTask } from "./tasks/rising-stars/build-rising-stars.task";
+import { cleanupRisingStars } from "./tasks/rising-stars/cleanup-rising-stars.task";
+import { fetchMissingSnapshotsTask } from "./tasks/rising-stars/fetch-missing-snapshots.task";
+import { triggerBuildStaticApiTask } from "./tasks/trigger-build-static-api.task";
+import { triggerBuildWebappTask } from "./tasks/trigger-build-webapp.task";
+import { updateBundleSizeTask } from "./tasks/update-bundle-size.task";
+import { updateGitHubDataTask } from "./tasks/update-github-data.task";
+import { updateHallOfFameTask } from "./tasks/update-hall-of-fame.task";
+import { updatePackageDataTask } from "./tasks/update-package-data.task";
+import { updateProjectTrendsTask } from "./tasks/update-project-trends.task";
+import { updateRepoTrendsTask } from "./tasks/update-repo-trends.task";
+
+const commands = [
+  notifyDailyTask,
+  notifyMonthlyTask,
+  updateGitHubDataTask,
+  triggerBuildStaticApiTask,
+  triggerBuildWebappTask,
+  buildStaticApiTask,
+  helloWorldProjectsTask,
+  helloWorldReposTask,
+  helloWorldHallOfFameTask,
+  updatePackageDataTask,
+  updateHallOfFameTask,
+  updateBundleSizeTask,
+  cleanupRepoTrendsTask,
+  updateRepoTrendsTask,
+  updateProjectTrendsTask,
+  invalidateTrendsCacheTask,
+  checkTrendsQueriesTask,
+  buildMonthlyRankingsTask,
+  buildRisingStarsTask,
+  cleanupRisingStars,
+  fetchMissingSnapshotsTask,
+  rebuildTagClosureTask,
+].map(getCommand);
+
+const staticApiDailyTask = command(
+  {
+    name: "static-api-daily",
+    description:
+      "Build command on Vercel: build static API, trigger Next.js rebuild and send notification",
+    flags: sharedFlags,
+  },
+  (argv) => {
+    const tasks: Task<any>[] = [
+      buildStaticApiTask,
+      triggerBuildWebappTask,
+      notifyDailyTask,
+    ];
+    const runner = createTaskRunner(tasks);
+    runner.run(argv.flags);
+  },
+);
+
+const dailyUpdateTrendsTask = command(
+  {
+    name: "daily-update-trends",
+    description:
+      "Daily trends pipeline: cleanup → repo_trends Pass 1 → project_trends Pass 2 → web app cache invalidation. Stops if a task throws; per-row errors are logged and the row keeps yesterday's value.",
+    flags: sharedFlags,
+  },
+  (argv) => {
+    const tasks: Task<any>[] = [
+      cleanupRepoTrendsTask,
+      updateRepoTrendsTask,
+      updateProjectTrendsTask,
+      // Must stay last: the home page and the /trends pages read the tables the
+      // two passes above write. See the task's own doc comment.
+      invalidateTrendsCacheTask,
+    ];
+    const runner = createTaskRunner(tasks);
+    runner.run(argv.flags);
+  },
+);
+
+cli({
+  name: "bestofjs-cli",
+  commands: [staticApiDailyTask, dailyUpdateTrendsTask, ...commands],
+});
+
+function getCommand(task: Task<any>) {
+  return command(
+    {
+      name: task.name,
+      flags: { ...sharedFlags, ...task.flags },
+      help: {
+        description: task.description,
+      },
+    },
+    (argv) => {
+      const runner = createTaskRunner([task]);
+      runner.run(argv.flags);
+    },
+  );
+}

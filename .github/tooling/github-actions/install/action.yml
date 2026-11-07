@@ -1,0 +1,15 @@
+name: "Shared setup"
+description: "Set up Node.js with PNPM"
+
+runs:
+  using: composite
+  steps:
+    - name: Install PNPM
+      uses: pnpm/action-setup@v5
+      with:
+        version: 12.3.4
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+        cache: pnpm

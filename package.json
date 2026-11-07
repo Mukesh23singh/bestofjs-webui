@@ -1,84 +1,33 @@
 {
-  "name": "bestofjs-webui",
-  "version": "0.34.0",
-  "description": "Best of JS front-end web application",
-  "engines": {
-    "node": "14.x"
-  },
+  "name": "bestofjs",
+  "version": "1.0.0",
+  "description": "Best of JS monorepo",
   "scripts": {
-    "start": "cross-env REACT_APP_VERSION=$npm_package_version react-scripts start",
-    "build": "cross-env REACT_APP_VERSION=$npm_package_version react-scripts build && node ./build-meta",
-    "test": "react-scripts test --env=jsdom",
-    "pretty-quick": "pretty-quick",
-    "precommit": "pretty-quick --staged"
+    "backup": "NODE_ENV=production bun run ./apps/backend/src/backup/make-backup.ts",
+    "restore": "dotenv -e .env.development -- bun run ./apps/backend/src/backup/restore-backup.ts",
+    "cli": "bun --env-file=.env.${STAGE:=development} run --silent apps/cli/src/cli.ts",
+    "build": "turbo run build -F=!legacy",
+    "lint": "turbo run lint -F=!legacy",
+    "typecheck": "turbo run typecheck -F=!legacy",
+    "test": "pnpm -F web test",
+    "test:e2e": "pnpm -F web test:e2e",
+    "test:e2e:install": "pnpm -F web exec playwright install"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/bestofjs/bestofjs-webui"
-  },
-  "keywords": [
-    "react",
-    "create-react-app"
-  ],
   "author": "Michael Rambeau",
   "license": "MIT",
-  "bugs": {
-    "url": "https://github.com/bestofjs/bestofjs-webui/issues"
-  },
-  "homepage": "https://bestofjs.org",
-  "dependencies": {
-    "@chakra-ui/react": "^1.8.1",
-    "@emotion/react": "^11.1.1",
-    "@emotion/styled": "^11.0.0",
-    "@headlessui/react": "^1.4.0",
-    "cross-env": "^7.0.3",
-    "framer-motion": "^4.1.17",
-    "numeral": "^1.5.3",
-    "qs": "^6.9.0",
-    "react": "^17.0.2",
-    "react-content-loader": "^5.1.2",
-    "react-dom": "^17.0.2",
-    "react-icons": "^3.10.0",
-    "react-router": "^5.1.2",
-    "react-router-dom": "^5.1.2",
-    "react-scripts": "^4.0.3",
-    "react-select": "^4.3.1",
-    "react-simple-animate": "^3.3.6",
-    "react-toggled": "^1.0.2",
-    "react-use": "^15.3.0",
-    "react-vertical-timeline-component": "^3.0.2",
-    "reselect": "^4.0.0",
-    "swr": "^0.2.3",
-    "tinytime": "^0.2.6",
-    "typescript": "^4.4.4",
-    "unfetch": "^4.1.0",
-    "unstated-next": "^1.1.0",
-    "use-debounce": "^3.0.0",
-    "vague-time": "^2.4.1"
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24",
+    "pnpm": ">=11"
   },
   "devDependencies": {
-    "@types/debug": "^4.1.5",
-    "@types/jest": "^26.0.4",
-    "@types/node": "^14.0.23",
-    "@types/react": "^17.0.38",
-    "@types/react-dom": "^17.0.11",
-    "@types/react-router": "^5.1.17",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-prettier": "^4.0.0",
-    "husky": "^0.14.3",
-    "prettier": "^2.4.1",
-    "pretty-quick": "^1.4.1"
+    "@biomejs/biome": "2.1.1",
+    "dotenv-cli": "catalog:",
+    "next-devtools-mcp": "^0.3.3",
+    "shadcn": "^3.5.0",
+    "tsx": "catalog:",
+    "turbo": "^2.9.14",
+    "typescript": "catalog:"
   },
-  "browserslist": [
-    ">0.2%",
-    "not dead",
-    "not ie <= 11",
-    "not op_mini all"
-  ],
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "plugin:prettier/recommended"
-    ]
-  }
+  "private": true
 }
